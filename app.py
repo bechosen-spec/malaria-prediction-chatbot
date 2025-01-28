@@ -180,7 +180,7 @@ def malaria_chatbot():
                     # Move to the next question
                     st.session_state.chatbot_step += 1
         else:
-            # Handle prediction
+            # Collect inputs for diagnosis
             input_data = np.array([
                 st.session_state.responses["How old are you?"],
                 st.session_state.responses["What is your gender?"],
@@ -196,31 +196,40 @@ def malaria_chatbot():
                 st.session_state.responses["Are you experiencing diarrhea?"],
             ]).reshape(1, -1)
 
-            # Make prediction
-            if svm_model:
-                try:
-                    diagnosis = svm_model.predict(input_data)[0]
-                    result = "Positive for Malaria" if diagnosis == 1 else "Negative for Malaria"
+            # Display Diagnose button
+            if st.button("Diagnose"):
+                if svm_model:
+                    try:
+                        diagnosis = svm_model.predict(input_data)[0]
+                        result = "Positive for Malaria" if diagnosis == 1 else "Negative for Malaria"
 
-                    # Add the prediction to chat history
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": f"🤖 Based on your symptoms, the diagnosis is: **{result}**"}
-                    )
+                        # Add the prediction to chat history
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": f"🤖 Based on your symptoms, the diagnosis is: **{result}**"}
+                        )
 
-                    # Save the chat and prediction to the database
-                    c.execute(
-                        'INSERT INTO chat_history (user_id, symptoms, diagnosis) VALUES (?, ?, ?)',
-                        (st.session_state.current_user, str(st.session_state.responses), result)
-                    )
-                    conn.commit()
+                        # Save the chat and prediction to the database
+                        try:
+                            user_id = c.execute(
+                                'SELECT id FROM users WHERE username = ?',
+                                (st.session_state.current_user,)
+                            ).fetchone()[0]
 
-                except Exception as e:
-                    st.error(f"Error during prediction: {e}")
-            else:
-                st.error("SVM model not loaded. Unable to make predictions.")
+                            c.execute(
+                                'INSERT INTO chat_history (user_id, symptoms, diagnosis) VALUES (?, ?, ?)',
+                                (user_id, str(st.session_state.responses), result)
+                            )
+                            conn.commit()
+                        except Exception as db_error:
+                            st.error(f"Error saving chat history: {db_error}")
 
-            # Mark conversation as finished
-            st.session_state.conversation_finished = True
+                    except Exception as e:
+                        st.error(f"Error during prediction: {e}")
+                else:
+                    st.error("SVM model not loaded. Unable to make predictions.")
+
+                # Mark conversation as finished
+                st.session_state.conversation_finished = True
 
     # Handle conversation finished state
     if st.session_state.conversation_finished:
@@ -233,14 +242,15 @@ def malaria_chatbot():
 # Main App
 def main():
     st.title("🩸 Malaria Diagnostic Assistant")
-    
-    if not st.session_state.get('authenticated', False):
+
+    # Authentication Check
+    if not st.session_state.get("authenticated", False):
         auth_type = option_menu(
             None, ["Login", "Register"],
-            icons=['box-arrow-in-right', 'person-plus'], 
+            icons=["box-arrow-in-right", "person-plus"],
             menu_icon="cast", default_index=0, orientation="horizontal"
         )
-        
+
         if auth_type == "Login":
             with st.form("Login Form"):
                 username = st.text_input("Username")
@@ -251,60 +261,65 @@ def main():
                         st.session_state.authenticated = True
                         st.session_state.current_user = username
                         st.session_state.is_admin = auth_result
-                        st.rerun()
+                        st.success("Login successful!")
+                        st.experimental_rerun()
                     else:
-                        st.error("Invalid credentials")
-                        
+                        st.error("Invalid username or password. Please try again.")
+
         elif auth_type == "Register":
             with st.form("Register Form"):
                 username = st.text_input("Username")
                 password = st.text_input("Password", type="password")
                 if st.form_submit_button("Register"):
                     if register_user(username, password):
-                        st.success("Registration successful! Please login")
+                        st.success("Registration successful! Please login.")
                     else:
-                        st.error("Username already exists")
-    
+                        st.error("Username already exists. Please choose another.")
+
+    # Main Menu After Authentication
     else:
         menu_items = ["💬 Chatbot", "👤 Profile"]
         if st.session_state.is_admin:
             menu_items.append("🛠️ Admin")
         menu_items.append("🚪 Logout")
-        
+
         selected = option_menu(
             None, menu_items,
-            icons=['chat-dots', 'person-gear', 'tools', 'box-arrow-right'],
+            icons=["chat-dots", "person-gear", "tools", "box-arrow-right"],
             menu_icon="cast", default_index=0, orientation="horizontal"
         )
-        
+
         if selected == "💬 Chatbot":
             malaria_chatbot()
-            
+
         elif selected == "👤 Profile":
             st.subheader("👤 User Profile")
-            st.write(f"Username: {st.session_state.current_user}")
-            st.write("Chat History:")
+            st.write(f"**Username:** {st.session_state.current_user}")
+            st.write("### Chat History")
             try:
-                user_id = c.execute('SELECT id FROM users WHERE username = ?', (st.session_state.current_user,)).fetchone()[0]
+                user_id = c.execute(
+                    "SELECT id FROM users WHERE username = ?", (st.session_state.current_user,)
+                ).fetchone()[0]
                 history = pd.read_sql(
-                    'SELECT symptoms, diagnosis, timestamp FROM chat_history WHERE user_id = ?',
+                    "SELECT symptoms, diagnosis, timestamp FROM chat_history WHERE user_id = ?",
                     conn,
                     params=(user_id,)
                 )
                 if history.empty:
-                    st.write("No chat history available.")
+                    st.info("No chat history available.")
                 else:
                     st.dataframe(history)
             except Exception as e:
                 st.error(f"Error fetching chat history: {e}")
-            
+
         elif selected == "🛠️ Admin" and st.session_state.is_admin:
             admin_panel()
-            
+
         elif selected == "🚪 Logout":
             for key in ["authenticated", "current_user", "is_admin"]:
                 st.session_state.pop(key, None)
-            st.rerun()
+            st.success("You have been logged out.")
+            st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
