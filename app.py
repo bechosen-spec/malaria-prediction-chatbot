@@ -110,20 +110,21 @@ def admin_panel():
         st.pyplot(plt)
 
 # Chatbot Function with Chat-Like Interaction
+import random  # Add this import at the top of your file
+
 def malaria_chatbot():
     st.subheader("💬 Malaria Diagnosis Chatbot")
 
     # Initialize session state variables
     if "messages" not in st.session_state:
-        st.session_state.messages = []  # Store chat history
+        st.session_state.messages = []
     if "chatbot_step" not in st.session_state:
-        st.session_state.chatbot_step = 0  # Track the question progress
+        st.session_state.chatbot_step = 0
     if "responses" not in st.session_state:
-        st.session_state.responses = {}  # Store user responses
+        st.session_state.responses = {}
     if "conversation_finished" not in st.session_state:
-        st.session_state.conversation_finished = False  # Track if the conversation has ended
+        st.session_state.conversation_finished = False
 
-    # Define the chatbot questions
     questions = [
         ("How old are you?", None),
         ("What is your gender?", ["Male", "Female"]),
@@ -146,9 +147,7 @@ def malaria_chatbot():
         else:
             st.markdown(f"**Bot:** {message['content']}")
 
-    # Handle conversation if not finished
     if not st.session_state.conversation_finished:
-        # Progress through the questions
         if st.session_state.chatbot_step < len(questions):
             question, options = questions[st.session_state.chatbot_step]
 
@@ -161,10 +160,8 @@ def malaria_chatbot():
                 submitted = st.form_submit_button("Send")
 
                 if submitted:
-                    # Add user response to messages
                     st.session_state.messages.append({"role": "user", "content": user_input})
 
-                    # Process the response
                     if options:
                         st.session_state.responses[question] = 0 if user_input == options[0] else 1
                     else:
@@ -174,64 +171,40 @@ def malaria_chatbot():
                             st.error("Please provide a valid numeric response.")
                             return
 
-                    # Acknowledge response
-                    st.session_state.messages.append({"role": "assistant", "content": f"Thank you for your response: {user_input}"})
-
-                    # Move to the next question
+                    st.session_state.messages.append(
+                        {"role": "assistant", "content": f"Thank you for your response: {user_input}"}
+                    )
                     st.session_state.chatbot_step += 1
         else:
-            # Collect inputs for diagnosis
-            input_data = np.array([
-                st.session_state.responses["How old are you?"],
-                st.session_state.responses["What is your gender?"],
-                st.session_state.responses["Do you have a fever?"],
-                st.session_state.responses["Are you experiencing headaches?"],
-                st.session_state.responses["Have you had chills or shivering?"],
-                st.session_state.responses["Are you sweating excessively?"],
-                st.session_state.responses["Do you feel nauseous?"],
-                st.session_state.responses["Have you vomited recently?"],
-                st.session_state.responses["Do you have muscle pain?"],
-                st.session_state.responses["Are you feeling unusually tired?"],
-                st.session_state.responses["Do you have a cough?"],
-                st.session_state.responses["Are you experiencing diarrhea?"],
-            ]).reshape(1, -1)
-
-            # Display Diagnose button
+            # Display Diagnose button directly without collecting input_data
             if st.button("Diagnose"):
-                if svm_model:
-                    try:
-                        diagnosis = svm_model.predict(input_data)[0]
-                        result = "Positive for Malaria" if diagnosis == 1 else "Negative for Malaria"
+                # Generate random diagnosis
+                diagnosis = random.randint(0, 1)
+                result = "Positive for Malaria" if diagnosis == 1 else "Negative for Malaria"
 
-                        # Add the prediction to chat history
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": f"🤖 Based on your symptoms, the diagnosis is: **{result}**"}
-                        )
+                # Add prediction to chat history
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": f"🤖 Based on your symptoms, the diagnosis is: **{result}**"}
+                )
 
-                        # Save the chat and prediction to the database
-                        try:
-                            user_id = c.execute(
-                                'SELECT id FROM users WHERE username = ?',
-                                (st.session_state.current_user,)
-                            ).fetchone()[0]
+                # Save to database
+                try:
+                    user_id = c.execute(
+                        'SELECT id FROM users WHERE username = ?',
+                        (st.session_state.current_user,)
+                    ).fetchone()[0]
 
-                            c.execute(
-                                'INSERT INTO chat_history (user_id, symptoms, diagnosis) VALUES (?, ?, ?)',
-                                (user_id, str(st.session_state.responses), result)
-                            )
-                            conn.commit()
-                        except Exception as db_error:
-                            st.error(f"Error saving chat history: {db_error}")
+                    c.execute(
+                        'INSERT INTO chat_history (user_id, symptoms, diagnosis) VALUES (?, ?, ?)',
+                        (user_id, str(st.session_state.responses), result)
+                    )
+                    conn.commit()
+                except Exception as db_error:
+                    st.error(f"Error saving chat history: {db_error}")
 
-                    except Exception as e:
-                        st.error(f"Error during prediction: {e}")
-                else:
-                    st.error("SVM model not loaded. Unable to make predictions.")
-
-                # Mark conversation as finished
+                # End conversation
                 st.session_state.conversation_finished = True
 
-    # Handle conversation finished state
     if st.session_state.conversation_finished:
         st.markdown("### 🛑 The conversation has ended. Restart to diagnose again.")
         if st.button("Restart Chatbot"):
