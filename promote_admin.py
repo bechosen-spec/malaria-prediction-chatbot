@@ -5,7 +5,7 @@ conn = sqlite3.connect('malaria_chatbot.db')
 c = conn.cursor()
 
 # Promote the user to admin
-username = 'Chosen100'  # Replace with the actual username
+username = 'mandy'  # Replace with the actual username
 c.execute('UPDATE users SET is_admin = 1 WHERE username = ?', (username,))
 
 # Commit the changes and close the connection
